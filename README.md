@@ -8,7 +8,7 @@
 **HexaStudio** is the next-generation control environment for the HexaKinetica ecosystem. It succeeds the legacy [RDT (Robot Development Toolkit)](https://github.com/hexakinetica/RDT-core).
 
 ![HexaStudio UI](HexaStudio.png)
-[![Watch the video](https://youtu.be/zlvZ-dq6FRw)
+[![Watch the video]([https://youtu.be/zlvZ-dq6FRw](https://www.youtube.com/watch?v=zlvZ-dq6FRw))
 
 This repository contains the **HMI** and **VRC** components. It is designed to work with both the virtual controller (included) and the real-time hardware controller (**HexaMotion**, hosted separately).
 
