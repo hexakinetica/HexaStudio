@@ -1,0 +1,60 @@
+# Prerequisites
+*.d
+*.obj
+*.o
+*.inc
+*.x
+
+# CMake build artifacts
+build/
+build_*/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+*.cmake
+Makefile
+*.ninja
+.ninja_*
+compile_commands.json
+
+# Qt artifacts
+*.moc
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+.qmake.stash
+*.qmlc
+*.jsc
+Makefile*
+
+# IDE settings
+.idea/
+.vscode/
+*.user
+*.suo
+*.ntvs
+*.njsproj
+*.sln
+*.vcxproj
+*.vcxproj.filters
+
+# OS generated
+.DS_Store
+Thumbs.db
+
+# Executables and libs
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+
+# Doxygen output
+docs/html/
+docs/latex/
+docs/man/
+docs/rtf/
+docs/xml/
+doxygen_sqlite3.db

@@ -1,0 +1,146 @@
+/**
+\mainpage HexaKinetica System Architecture Document (SAD)
+
+\tableofcontents
+
+\section sec_intro 1. Introduction and Scope
+
+\subsection sub_purpose 1.1 Purpose of this Document
+This System Architecture Document (SAD) serves as the **Constitution** for the HexaKinetica project. It defines the structural design, interfaces, and high-level principles that govern the development of the Human-Machine Interface (HMI) for the 6-DOF industrial robot.
+
+This document is the **Single Source of Truth (SSOT)**. Any deviation in the code from this document is considered a defect. If the code works but contradicts the architecture, the architecture must be updated, or the code must be refactored.
+
+\subsection sub_scope 1.2 Scope
+The system is divided into two distinct logical and physical entities. This document primarily governs the **Client (HMI)** but strictly defines the contract with the **Server (Kernel)**.
+
+- **The Kernel (Robot Controller):** The backend system responsible for hardware control, real-time motion planning, kinematics solving, and safety monitoring. In the development environment, this is represented by the `HexaVRC` (Virtual Robot Controller).
+- **The Client (HexaKinetica HMI):** The graphical user interface built with Qt 6. It is responsible for visualization, user input, and command transmission.
+
+\section sec_philosophy 2. Architectural Philosophy
+
+The HexaKinetica architecture is built upon three non-negotiable pillars.
+
+\subsection sub_stateless 2.1 The "Stateless Client" Principle
+The HMI is a "Thin Client" regarding physical reality. It must never assume it knows the state of the robot better than the Controller.
+
+- **Rule 1:** The HMI does not calculate physics. It does not perform Inverse Kinematics (IK) to validate a move. It sends a request to the Kernel, and the Kernel validates it.
+- **Rule 2:** The HMI does not store the "Master Configuration". On startup, the HMI is empty. It must request the configuration (Tools, Bases, Limits) from the Kernel.
+- **Rule 3:** The HMI does not execute logic. It does not run the robot program. It uploads the program to the Kernel, and the Kernel executes it line-by-line, reporting status back.
+
+*Rationale:* This prevents "Split-Brain" scenarios where the UI shows one thing (e.g., "Robot is safe") while the Controller knows another (e.g., "Robot is in collision"). The Controller is the only source of truth.
+
+\subsection sub_remote_loop 2.2 The Remote Control Loop Pattern
+The interaction between the User and the Robot is an infinite loop that spans across the network.
+
+1.  **Input:** User presses a button (e.g., "Jog X+").
+2.  **Request:** HMI serializes this intent into a `ControlState` packet.
+3.  **Transmission:** Packet is sent via TCP.
+4.  **Processing:** Kernel receives the packet, calculates physics for the next time step ($t + \Delta t$).
+5.  **Feedback:** Kernel sends back a `RobotStatus` packet containing the new position.
+6.  **Visualization:** HMI receives the packet and renders the robot at the new position.
+
+*Implication:* If the network is cut, the robot stops moving on the screen AND in reality. The UI is a direct reflection of the feedback loop.
+
+\subsection sub_dual_path 2.3 Dual-Path Data Flow strategy
+To solve the conflict between "High Speed" and "High Reliability," the system uses two logical data paths over the same physical connection.
+
+| Feature | **Fast Path (Telemetry)** | **Slow Path (Transactions)** |
+| :--- | :--- | :--- |
+| **Frequency** | Cyclic (20Hz - 100Hz) | On Demand (User Action) |
+| **Data Type** | Joint Angles, Velocity, I/O, Status Flags | Config files, Programs, Logs |
+| **Reliability** | **Lossy.** Old packets are useless. | **Atomic.** Must succeed or fail completely. |
+| **Mechanism** | Fire-and-Forget (UDP-like logic over TCP) | Request-Response with ID matching |
+| **Latency** | Critical (< 50ms) | Non-Critical (< 2000ms) |
+
+\section sec_components 3. High-Level Component Design
+
+The HMI application is structured into modular layers.
+
+\dot
+digraph Architecture {
+    node [shape=box, style=filled, fillcolor=white];
+    bgcolor="transparent";
+
+    subgraph cluster_UI {
+        label = "Presentation Layer (UI)";
+        style=dashed;
+        PanelTop [label="PanelTop\n(Global State)"];
+        PanelLeft [label="PanelLeft\n(Program Logic)"];
+        PanelRight [label="PanelRight\n(Jogging)"];
+        PanelView3D [label="PanelView3D\n(Qt3D Visualization)"];
+    }
+
+    subgraph cluster_Core {
+        label = "Core Layer";
+        style=filled;
+        fillcolor="#eeeeee";
+        RobotService [label="RobotService\n(Singleton Manager)", shape=component, fillcolor="#d0e0ff"];
+        BackendTypes [label="Data Structures\n(DTOs)"];
+    }
+
+    subgraph cluster_Network {
+        label = "Communication Layer";
+        TcpSocket [label="QTcpSocket"];
+        Protocol [label="RdtProtocol\n(JSON Serializer)"];
+    }
+
+    User -> PanelRight [label="Click"];
+    PanelRight -> RobotService [label="Signal: jogRequested"];
+    RobotService -> Protocol [label="Serialize"];
+    Protocol -> TcpSocket [label="Write JSON"];
+    TcpSocket -> RobotService [label="Read JSON"];
+    RobotService -> Protocol [label="Deserialize"];
+    RobotService -> BackendTypes [label="Update Structs"];
+    RobotService -> PanelView3D [label="Signal: stateChanged"];
+}
+\enddot
+
+\subsection sub_robotservice 3.1 The RobotService (Gateway)
+The `RobotService` class is the heart of the application. It implements the **Facade Pattern**.
+- It hides the complexity of networking from the UI panels.
+- It maintains the latest valid snapshot of the `HmiRobotStatus`.
+- It acts as the "Main Thread" dispatcher.
+
+\subsection sub_ui_panels 3.2 The UI Panels
+The UI is composed of isolated widgets.
+- **Top:** Safety status, connection, mode switching.
+- **Left:** Program editor (Model-View architecture).
+- **Right:** Manual control (Jogging), coordinate monitoring.
+- **Center:** 3D Viewport.
+
+Constraint: Panels must NEVER talk to each other directly. They communicate strictly via Signals and Slots through the `RobotService`.
+
+\section sec_standards 4. Documentation & Coding Standards
+
+To maintain this architecture during the refactoring, the following rules apply.
+
+\subsection sub_doxygen 4.1 Doxygen Contracts
+Every class and public method must have a Doxygen comment block.
+- `@brief`: A one-line summary.
+- `@details`: A deeper explanation of *why* this method exists.
+- `@param`: Description of inputs, including valid ranges (e.g., "0 to 100%").
+- `@return`: Description of output.
+- `@thread_safety`: Explicitly state if the method is thread-safe or must be called from the main thread.
+
+\subsection sub_naming 4.2 Naming Conventions (Strict)
+- **Classes:** `PascalCase` (e.g., `RobotController`, `TrajectoryPlanner`).
+- **Methods:** `camelCase` (e.g., `calculateInverseKinematics`).
+- **Variables:** `m_camelCase` for members, `camelCase` for locals.
+- **Constants:** `SCREAMING_SNAKE_CASE`.
+- **Files:** Match class names (e.g., `RobotService.h`, `RobotService.cpp`).
+
+\subsection sub_json 4.3 JSON Protocol Standard
+We use `nlohmann::json`.
+- All JSON keys must be `camelCase`.
+- No abbreviations in keys (e.g., use `velocity` instead of `vel`).
+- Arrays are preferred over maps for ordered lists (like trajectory points).
+
+\section sec_safety 5. Safety Considerations
+
+Even though this is an HMI, safety is paramount.
+
+1.  **Heartbeat:** The HMI must send a heartbeat every 100ms. If the Kernel does not receive it for 500ms, it triggers a Soft Stop.
+2.  **E-Stop Priority:** The E-Stop command is processed with the highest priority in the message queue.
+3.  **Validation:** The HMI performs *client-side validation* (e.g., input masks) only for UX. The real safety validation happens on the Kernel side.
+
+*/
