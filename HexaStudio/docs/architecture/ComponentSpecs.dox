@@ -1,0 +1,80 @@
+/**
+\page component_specs Component Specifications
+
+\tableofcontents
+
+\section comp_intro 1. Overview
+This section defines the internal logic and responsibilities of the major C++ classes within the HexaKinetica HMI. These components must adhere to the "Thin Client" philosophy defined in the System Overview.
+
+---
+
+\section comp_robot_service 2. RobotService (The Gateway)
+
+\subsection rs_role Role
+`RobotService` is the **Facade** for the entire backend layer. It is implemented as a thread-safe Singleton. It isolates the UI widgets from the complexity of the TCP/IP stack and the JSON protocol.
+
+\subsection rs_responsibilities Responsibilities
+1.  **Connection Management:**
+    - Maintains the `QTcpSocket`.
+    - Handles auto-reconnection logic (watchdog timer).
+    - Buffers incoming TCP streams and splits them by the newline character (`\n`).
+
+2.  **State Management (Fast Path):**
+    - Deserializes `STATUS_UPDATE` packets into the `HmiRobotStatus` struct.
+    - Emits the `stateChanged` signal.
+    - **Throttling:** Ensures the UI is not flooded. (Current implementation: Event-driven, but ready for timer-based throttling if needed).
+
+3.  **Transaction Management (Slow Path):**
+    - Generates unique `RequestId`s for commands (e.g., `programUpdateReqId`).
+    - Holds the state of pending transactions (Waiting for ACK).
+    - Prevents the UI from sending duplicate heavy requests (e.g., uploading the same program twice).
+
+\subsection rs_contract Contract with UI
+- **Input:** UI Panels call public slots (e.g., `jogJointIncremental`, `uploadProgram`).
+- **Output:** UI Panels listen to signals (`stateChanged`, `settingsReceived`, `trajectoryReceived`).
+- **Constraint:** `RobotService` must NEVER access UI widgets directly.
+
+---
+
+\section comp_panel_view3d 3. PanelView3D (The Visualizer)
+
+\subsection pv3d_role Role
+`PanelView3D` is the digital twin of the robot. It uses **Qt3D** to render the robot's state in real-time.
+
+\subsection pv3d_kinematics Kinematics & Visualization
+The view handles two distinct visual representations of the robot:
+
+1.  **The Real Robot (Solid):**
+    - Driven by `actualJoints` from the Controller.
+    - Represents the physical reality (feedback from encoders).
+    - Used for monitoring.
+
+2.  **The Ghost / Planned Robot (Transparent):**
+    - Driven by `plannedJoints` from the Controller.
+    - Represents the output of the Motion Planner.
+    - Used for immediate visual feedback during Jogging (before the physical robot moves).
+
+\subsection pv3d_trajectory Trajectory Rendering
+The trajectory is visualized using a hybrid approach for performance and clarity:
+- **Path:** A `QGeometryRenderer` with `LineStrip` topology. Represents the interpolated path.
+- **Waypoints:** A `QGeometryRenderer` with `Points` topology. Represents the keyframes defined in the program.
+- **Update Logic:** The buffers (`QBuffer`) are rewritten completely when a new trajectory packet arrives. If the path is empty, the vertex count is set to 0.
+
+---
+
+\section comp_program_model 4. ProgramModel (The Logic Store)
+
+\subsection pm_role Role
+`ProgramModel` serves as the local data store for the robot program being edited. It adapts the internal `QVector<ProgramCommand>` to the Qt Model/View architecture (`QAbstractListModel`).
+
+\subsection pm_sync Synchronization Strategy
+The HMI does not execute the program. It edits a local copy.
+1.  **User Action:** User adds a point or edits a command.
+2.  **Local Update:** `ProgramModel` updates the internal vector.
+3.  **Signal:** `PanelLeft` catches the change and emits `programChanged`.
+4.  **Upload:** `RobotService` serializes the entire program to JSON and sends it to the Controller.
+5.  **Feedback:** The Controller re-calculates the trajectory and sends back a `trajectoryReceived` event.
+
+This cycle ensures that "What you see (in 3D) is what you get (on the robot)."
+
+*/

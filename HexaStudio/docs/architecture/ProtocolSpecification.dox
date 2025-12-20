@@ -1,0 +1,148 @@
+/**
+\page protocol_spec Protocol Specification
+
+\tableofcontents
+
+\section proto_intro 1. Introduction
+
+The **Robot Data Transfer** protocol is the lifeline between the HexaKinetica HMI (Client) and the Robot Controller (Server). It is designed to be robust, stateless where possible, and capable of handling both real-time telemetry and large data transactions over a single TCP connection.
+
+\note Currently, the protocol uses **JSON** (via `nlohmann::json`) over TCP. While human-readable and easy to debug, this introduces serialization overhead.
+
+\section proto_structure 2. Packet Structure
+
+Every message sent over the network adheres to a strict envelope structure. The stream is newline-delimited (`\n`).
+
+\code{.json}
+{
+  "type": <integer>,    // Packet Type Enum
+  "payload": <object>   // Variable data based on type
+}
+\endcode
+
+\subsection proto_types 2.1 Packet Types
+The system currently defines two primary packet types:
+
+| Enum Value | Name | Direction | Description |
+| :--- | :--- | :--- | :--- |
+| **100** | `STATUS_UPDATE` | Server -> Client | High-frequency telemetry (20-100Hz). Contains robot state, sensor data, and ack flags. |
+| **200** | `CONTROL_STATE` | Client -> Server | High-frequency command packet. Contains jogging inputs, overrides, and transaction requests. |
+
+---
+
+\section proto_contracts 3. Data Contracts (Payloads)
+
+\subsection proto_motion_state 3.1 MotionState (Server -> Client)
+Part of `STATUS_UPDATE`. Represents the physical kinematics.
+
+\code{.cpp}
+struct MotionState {
+    // 6-DOF Joint Angles (Degrees).
+    // Source: Motor Encoders.
+    std::array<double, 6> actualJoints;
+
+    // 6-DOF Planned Angles (Degrees).
+    // Source: Path Planner.
+    // The HMI renders the "Ghost" robot using this data.
+    std::array<double, 6> plannedJoints;
+
+    // TCP Pose {X, Y, Z, A, B, C}.
+    // Calculated via Forward Kinematics on the Controller.
+    std::array<double, 6> actualTcp;
+
+    // Flags
+    bool isMoving;      // True if trajectory execution is active.
+    bool isSimulated;   // True if physics are mocked (Simulation Mode).
+    double speedRatio;  // Current effective speed override (0.0 - 1.0).
+};
+\endcode
+
+\subsection proto_control_state 3.2 ControlState (Client -> Server)
+Part of `CONTROL_STATE`. Represents user intent.
+
+\code{.cpp}
+struct ControlState {
+    // Jogging (Manual Move)
+    uint32_t jogRequestId;  // Incremental counter to detect new key presses.
+    int jogAxis;            // Index (0-5) of the axis to move. -1 = None.
+    double jogIncrement;    // Step size in degrees/mm.
+
+    // Global Overrides
+    double speedOverride;   // User requested speed (0.0 - 1.0).
+    bool enableRealMode;    // Request to switch from SIM to REAL.
+
+    // Safety
+    bool setEStop;          // Request immediate Emergency Stop.
+    bool resetEStop;        // Request to clear E-Stop state.
+
+    // Transactions (Slow Path)
+    uint32_t ackConfigVersion; // "I have config version X".
+    uint32_t ackTrajVersion;   // "I have trajectory version Y".
+};
+\endcode
+
+---
+
+\section proto_sequences 4. Communication Sequences
+
+\subsection seq_fast_path 4.1 Fast Path (Control Loop)
+This loop runs continuously. The HMI is the passive consumer.
+
+\dot
+sequenceDiagram
+    participant HMI as Client (HMI)
+    participant KERNEL as Server (Kernel)
+
+    Note over KERNEL: Physics Tick (t)
+    KERNEL->>HMI: STATUS_UPDATE { actualJoints: [0,0...], isMoving: false }
+
+    Note over HMI: Render Frame
+    HMI->>KERNEL: CONTROL_STATE { jogAxis: -1, speed: 0.5 }
+
+    Note over KERNEL: Physics Tick (t+1)
+    KERNEL->>HMI: STATUS_UPDATE { ... }
+\enddot
+
+\subsection seq_slow_path 4.2 Slow Path (Config Sync)
+Configuration synchronization uses a "Version Mismatch" pattern.
+
+\dot
+sequenceDiagram
+    participant HMI
+    participant KERNEL
+
+    Note over HMI: Connects. Local configVer = 0.
+
+    HMI->>KERNEL: CONTROL_STATE { ackConfigVersion: 0 }
+
+    Note over KERNEL: Checks internal configVer (e.g., 5).
+    Note over KERNEL: 0 != 5. Needs Sync.
+
+    KERNEL->>HMI: STATUS_UPDATE { configVersion: 5, config: { tools: [...], limits: [...] } }
+
+    Note over HMI: Updates local storage.
+    Note over HMI: Sets local configVer = 5.
+
+    HMI->>KERNEL: CONTROL_STATE { ackConfigVersion: 5 }
+
+    Note over KERNEL: 5 == 5. Sync Complete.
+    KERNEL->>HMI: STATUS_UPDATE { configVersion: 5 } (Without payload)
+\enddot
+
+---
+
+\section proto_growth 5. Growth Points (TODO)
+
+\todo **Granular Versioning:**
+Currently, `configVersion` covers Tools, Bases, and Limits. Changing a single tool forces a reload of the entire configuration.
+**Action:** Split into `toolVersion`, `baseVersion`, and `safetyVersion` for incremental updates.
+
+\todo **Keep-Alive & QoS:**
+There is no explicit Quality of Service logic.
+**Action:** Implement a UDP channel for the Fast Path (telemetry) and keep TCP for the Slow Path (reliable transactions), following standard industrial IoT patterns.
+
+\todo **Security:**
+The protocol sends data in plain text.
+**Action:** Implement TLS handshake or a simple challenge-response authentication token for the connection phase.
+
+*/
