@@ -8,8 +8,9 @@
 **HexaStudio** is the next-generation control environment for the HexaKinetica ecosystem. It succeeds the legacy [RDT (Robot Development Toolkit)](https://github.com/hexakinetica/RDT-core).
 
 ![HexaStudio UI](HexaStudio.png)
+[![Watch the video](https://youtu.be/zlvZ-dq6FRw)
 
-This repository contains the **Client-Side** and **Simulation** components. It is designed to work with both the virtual controller (included) and the real-time hardware controller (**HexaMotion**, hosted separately).
+This repository contains the **HMI** and **VRC** components. It is designed to work with both the virtual controller (included) and the real-time hardware controller (**HexaMotion**, hosted separately).
 
 ## 🏗 Architecture
 
@@ -17,7 +18,7 @@ The repository is organized as a monorepo containing:
 
 ### 1. 🖥️ HexaStudio (HMI)
 The "Cockpit" for the operator. A modern, high-performance GUI built with **Qt 6**.
-*   **Visual Programming:** Block-based editor for robot logic.
+*   **Easy Programming:** Trajectory editor for robot logic.
 *   **3D Digital Twin:** Real-time visualization using Qt3D.
 *   **Stateless Design:** Acts as a thin client; logic resides in the controller (Virtual or Real).
 
@@ -25,7 +26,7 @@ The "Cockpit" for the operator. A modern, high-performance GUI built with **Qt 6
 A lightweight standalone emulator of the robot controller logic.
 *   **Physics Simulation:** Simulates kinematics and interpolation loops (50Hz).
 *   **Hardware Abstraction:** Implements the RDT protocol stack for development without physical hardware.
-*   **Safe Playground:** Allows testing programs before deploying to the real robot.
+*   **Safe Playground:** Allows testing programs without the real robot.
 
 ### 3. 🔗 Shared
 Common protocol definitions (**RDT Protocol**) ensuring binary compatibility between:
