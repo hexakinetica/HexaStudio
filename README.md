@@ -47,3 +47,30 @@ Common protocol definitions (**RDT Protocol**) ensuring binary compatibility bet
 mkdir build && cd build
 cmake ..
 cmake --build .
+```
+
+### 🧩 Related Projects
+
+- More robotics content on our [YouTube channel](https://www.youtube.com/@hexakinetica)
+
+### Contact
+
+Email: contact@hexakinetica.com
+Website: https://www.hexakinetica.com
+
+### Disclaimer
+
+The robot models included are for visualization and educational purposes only and are not official models from their respective manufacturers. They are not intended for manufacturing, engineering, or commercial use. All trademarks, product names, and company names mentioned are the property of their respective owners.
+
+The software is provided "as is" without any guarantee of accuracy, completeness, or fitness for any particular purpose.
+If you are the copyright holder or believe any material posted violates your rights, please contact us to request removal.
+
+### Open Source License (GPL v3)
+This project is free software: you can redistribute it and/or modify it under the terms of the **GNU General Public License as published by the Free Software Foundation**, either version 3 of the License.
+
+**What this means:**
+*   ✅ You can use this software for personal projects, education, and research.
+*   ✅ You can modify the code and distribute it.
+*   ⚠️ **Condition:** If you distribute this software (or a modified version of it), you **must open-source your code** under the same GPL v3 license.
+
+See the [LICENSE](LICENSE) file for the full text.
