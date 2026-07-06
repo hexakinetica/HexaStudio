@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/">
+        <file>ViewportScene.qml</file>
+    </qresource>
+</RCC>

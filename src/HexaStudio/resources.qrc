@@ -1,0 +1,8 @@
+<RCC>
+    <qresource prefix="/">
+        <file>resources/Michroma-Regular.ttf</file>
+        <file>resources/IBMPlexMono-Regular.ttf</file>
+        <file>resources/chevron_down.svg</file>
+        <file>resources/HexaStudioDesktop.ico</file>
+    </qresource>
+</RCC>

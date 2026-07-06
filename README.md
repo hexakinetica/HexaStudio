@@ -1,77 +1,186 @@
-# HexaStudio Development Suite 🤖
+# HexaStudio — Operator Control Suite (HexaStudioNG)
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Standard](https://img.shields.io/badge/C%2B%2B-20-blue.svg)
-![Qt](https://img.shields.io/badge/Qt-6.10-green.svg)
-![Status](https://img.shields.io/badge/status-BETA-orange.svg)
+**A Qt 6 teach pendant and 3D digital twin for the HexaKinetica stack: a stateless thin client that
+drives the real-time controller over the RDT protocol.**
 
-**HexaStudio** is the next-generation control environment for the HexaKinetica ecosystem. It succeeds the legacy [RDT (Robot Development Toolkit)](https://github.com/hexakinetica/RDT-core).
+[![Standard](https://img.shields.io/badge/C%2B%2B-20-2A9D8F?style=flat-square)](https://isocpp.org/)
+[![Qt](https://img.shields.io/badge/Qt-6.11-2A9D8F?style=flat-square)](https://www.qt.io/)
+[![SDK](https://img.shields.io/badge/depends-HexaMotion--SDK-2A9D8F?style=flat-square)](../HexaMotion-SDK)
+[![License](https://img.shields.io/badge/license-AGPL%20v3-2A9D8F?style=flat-square)](#license)
 
-![HexaStudio UI](HexaStudio.png)
-> 🎥 **Watch on YouTube**: [Demo Video](https://www.youtube.com/watch?v=zlvZ-dq6FRw)
+![HexaStudioNG — operator control suite running on the HK-T10-Slim industrial tablet](docs/img/hexastudio-tablet.png)
 
-This repository contains the **HMI** and **VRC** components. It is designed to work with both the virtual controller (included) and the real-time hardware controller (**HexaMotion**, hosted separately).
+HexaStudio is the operator half of the [HexaKinetica](../README.md) stack — the cockpit. It is a modern,
+high-performance HMI built with **Qt 6** that connects to the [`HexaMotion`](../HexaMotion) controller. Control logic lives in the controller; the HMI holds **no authoritative state**, so it can be closed, crashed, or reconnected without affecting the robot.
 
-## Architecture
+This repository ships **HexaStudioNG** — the product assembled entirely from an independent module
+graph over a module-owned backend. It links directly against [`HexaMotion-SDK`](../HexaMotion-SDK) for
+the shared foundation (data types, RDT protocol/bridge, state, robot model). There is **no local copy**
+of the SDK.
 
-The repository is organized as a monorepo containing:
 
-### 1. 🖥️ HexaStudio (HMI)
-The "Cockpit" for the operator. A modern, high-performance GUI built with **Qt 6**.
-*   **Easy Programming:** Trajectory editor for robot logic.
-*   **3D Digital Twin:** Real-time visualization using Qt3D.
-*   **Stateless Design:** Acts as a thin client; logic resides in the controller (Virtual or Real).
+## Module graph
 
-### 2. 🧠 HexaVRC (Virtual Robot Controller)
-A lightweight standalone emulator of the robot controller logic.
-*   **Physics Simulation:** Simulates kinematics and interpolation loops (50Hz).
-*   **Hardware Abstraction:** Implements the RDT protocol stack for development without physical hardware.
-*   **Safe Playground:** Allows testing programs without the real robot.
+The HMI is assembled from independent, **bench-runnable** modules. Feature modules never depend on the
+backend or on each other — they communicate only through the composition root (`app_shell`) via
+intent signals and feedback slots. The one sanctioned abstraction is the backend contract.
 
-### 3. 🔗 Shared
-Common protocol definitions (**RDT Protocol**) ensuring binary compatibility between:
-*   HexaStudio (This Repo)
-*   HexaVRC (This Repo)
-*   RDT-Next (External Hardware Repo)
+```mermaid
+flowchart TB
+    classDef shell fill:#F0ECFB,stroke:#6E56CF,color:#2E1F5E;
+    classDef feat  fill:#EEF2F7,stroke:#35507A,color:#12233F;
+    classDef base  fill:#E6FBF9,stroke:#2A9D8F,color:#0B3B37;
+
+    Shell["app_shell — ShellWindow (composition root + mediator)<br/>HexaStudioNG.exe"]:::shell
+
+    subgraph Features ["feature modules"]
+        direction LR
+        PE2["program_editor"]:::feat
+        JOG2["jog_control"]:::feat
+        VP2["viewport3d"]:::feat
+        OV2["overlays"]:::feat
+        HAL2["hal_control"]:::feat
+        SB2["status_bar"]:::feat
+    end
+
+    subgraph Backend ["backend contract"]
+        BC["BackendClient (abstract)"]:::base
+        HB["HexaBackend (module-owned, over the RDT stack)"]:::base
+        BC -. impl .-> HB
+    end
+
+    UIK["hexa_ui_kit — theme · widgets · on-screen keyboard"]:::base
+    CON["hexa_contracts — HMI DTOs (header-only)"]:::base
+
+    Shell --> PE2 & JOG2 & VP2 & OV2 & HAL2 & SB2
+    Shell --> BC
+    Features --> UIK
+    Features --> CON
+    HB --> CON
+```
+
+| Module | Role |
+| :--- | :--- |
+| **`hexa_contracts`** | HMI DTOs (header-only) — the studio-side data contract. |
+| **`hexa_backend`** | Module-owned `HexaBackend` over the RDT stack: connection, resync, program mapping. |
+| **`hexa_ui_kit`** | Theme + styled widgets + on-screen keyboard (the studio's look & feel). |
+| **`program_editor`** | Trajectory/program authoring with validation, undo/redo, and a RUN gate. |
+| **`jog_control`** | Pendant-style jog panel (JOINT/WORLD/TOOL) with safety gating and a position monitor. |
+| **`status_bar`** | Top bar: mode, speed, E-Stop, diagnostics, honest system stats. |
+| **`overlays`** | Settings + diagnostics overlays (event log, subsystem annunciator). |
+| **`hal_control`** | HAL commissioning / bring-up panel (homing, set-zero, per-axis jog, MKS gate). |
+| **`viewport3d`** | Real-time 3D digital twin (Qt Quick 3D) + planner trajectory preview. |
+| **`app_shell`** | Composition root and the **HexaStudioNG** executable. |
+
+> UI (`hexa_ui_kit`) and DTOs (`hexa_contracts`) live **here** in Studio — they are *not* part of
+> HexaMotion-SDK, which is math + I/O only. The 3D viewport loads its robot model from the SDK's shared
+> `robots/` folder. See [`src/HexaStudio/MODULARIZATION.md`](src/HexaStudio/MODULARIZATION.md) for the
+> full module recipe and contracts.
 
 ---
 
-## 🚀 Getting Started
+## Connection lifecycle
 
-### Prerequisites
-*   CMake 3.16+
-*   Qt 6.10 (Widgets, 3D modules)
-*   C++20 compliant compiler (MSVC 2019+, GCC 10+, Clang 10+)
+```mermaid
+sequenceDiagram
+    participant U as Operator
+    participant S as ShellWindow
+    participant B as HexaBackend (RdtClient)
+    participant C as HexaCore
 
-### Build
-```bash
-mkdir build && cd build
-cmake ..
-cmake --build .
+    U->>S: launch HexaStudioNG
+    S->>B: connectToController(ip, :30002)
+    B->>C: TCP connect
+    C-->>B: RobotStatus (config + version)
+    B->>B: verify kRdtProtocolVersion (fail-closed)
+    B-->>S: publish tool/base config, SYSTEM READY
+    Note over B,C: auto-reconnect on drop — ~10 Hz status,<br/>interpolated to smooth motion in the twin
+    U->>S: jog / author / RUN
+    S->>B: intent signal → ControlState{reqId}
+    B->>C: send, then resend until processed*ReqId echoes
 ```
 
-### 🧩 Related Projects
+Each feature module's panel exposes the **same signal/slot contract** it would have against the
+controller, which is why every module is runnable in isolation against an offline `Fake*Controller`
+(see [Benches & screenshots](#benches--screenshots)).
 
-- More robotics content on our [YouTube channel](https://www.youtube.com/@hexakinetica)
+---
 
-### Contact
+## Build
 
-Email: contact@hexakinetica.com
-Website: https://www.hexakinetica.com
+### Prerequisites
 
-### Disclaimer
+- CMake ≥ 3.20
+- **Qt 6.11** — Widgets, Quick, Qml, Quick3D
+- C++20 compiler (MinGW-w64 64-bit reference toolchain)
+- [`HexaMotion-SDK`](../HexaMotion-SDK) as a submodule (`external/HexaMotion-SDK`) or a sibling checkout
 
-The robot models included are for visualization and educational purposes only and are not official models from their respective manufacturers. They are not intended for manufacturing, engineering, or commercial use. All trademarks, product names, and company names mentioned are the property of their respective owners.
+```bash
+cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_PREFIX_PATH=C:/Qt/6.11.1/mingw_64
+cmake --build build -j 4 --target HexaStudioNG
+```
 
-The software is provided "as is" without any guarantee of accuracy, completeness, or fitness for any particular purpose.
-If you are the copyright holder or believe any material posted violates your rights, please contact us to request removal.
+### Run
 
-### Open Source License (GPL v3)
-This project is free software: you can redistribute it and/or modify it under the terms of the **GNU General Public License as published by the Free Software Foundation**, either version 3 of the License.
+```bash
+build/bin/HexaStudioNG.exe          # add the Qt runtime + plugins to PATH
+```
 
-**What this means:**
-*   ✅ You can use this software for personal projects, education, and research.
-*   ✅ You can modify the code and distribute it.
-*   ⚠️ **Condition:** If you distribute this software (or a modified version of it), you **must open-source your code** under the same GPL v3 license.
+The HMI connects to the controller on `localhost:30002`. Useful headless flags:
 
-See the [LICENSE](LICENSE) file for the full text.
+| Flag | Purpose |
+| :--- | :--- |
+| `--selftest` | Construct-and-wire smoke of the full real-backend assembly; exits 0 without a UI loop. |
+| `--probe <seconds>` | Run the full app against a live controller for N seconds, then report `CONNECTED` / `NOT CONNECTED` and exit 0/1 (CI-friendly). |
+| `--screenshot <file.png>` | With `--probe`, save a window screenshot — the supported way to capture a live-connected reference image. |
+
+---
+
+## Benches & screenshots
+
+Every feature module builds a standalone `*_bench` executable driven by a deterministic offline
+controller, and each bench accepts `--screenshot <file.png>` to render staged reference states. This is
+the reproducible way to produce documentation images without a running controller:
+
+```bash
+# assembled HMI, offline:
+build/bin/app_shell_bench.exe --screenshot docs/img/shell.png
+# individual panels:
+build/bin/jog_control_bench.exe   --screenshot docs/img/jog.png
+build/bin/status_bar_bench.exe    --screenshot docs/img/status.png
+build/bin/hal_control_bench.exe   --screenshot docs/img/hal.png
+build/bin/overlays_bench.exe      --screenshot docs/img/settings.png
+```
+
+Live, controller-connected capture:
+
+```bash
+build/bin/HexaStudioNG.exe --probe 5 --screenshot docs/img/hexastudio_live.png
+```
+
+> Rendered images belong in [`docs/img/`](docs/img/). Drop the generated PNGs there and embed them in
+> this section — they are not committed as binaries by default.
+
+<!-- Example once generated:
+![HexaStudioNG — assembled HMI](docs/img/shell.png)
+-->
+
+---
+
+## Requirements & design docs
+
+Deep requirements, protocol/process specs, ADRs, and a generated per-class code reference live in the
+workspace [requirements vault](../requirements) (open `requirements/` as an Obsidian vault;
+
+## Disclaimer
+
+The bundled robot models are for visualization and education only and are not official models of any
+manufacturer. The software is provided "as is" without any guarantee of fitness for a particular
+purpose.
+
+## License
+
+Free software under the **GNU Affero General Public License v3** — see the [LICENSE](LICENSE) file.
+
+**Contact.** Website: <https://www.hexakinetica.com> · YouTube:
+[@hexakinetica](https://www.youtube.com/@hexakinetica)
